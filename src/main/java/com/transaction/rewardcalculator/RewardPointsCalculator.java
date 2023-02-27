@@ -8,7 +8,7 @@ public class RewardPointsCalculator {
     private static final int BASE_POINTS_PER_DOLLAR = 1;
     private static final int BONUS_POINTS_PER_DOLLAR = 1;
 
-    public static int calculateRewardPoints(Transaction transaction) {
+    public static int calculateRewardPoints(CustomerTransaction transaction) {
         BigDecimal transactionAmount =  BigDecimal.valueOf(transaction.getTransactionAmount());
         BigDecimal basePointsAmount = transactionAmount.subtract(BASE_POINTS_THRESHOLD).max(BigDecimal.ZERO);
         BigDecimal bonusPointsAmount = transactionAmount.subtract(BONUS_POINTS_THRESHOLD).max(BigDecimal.ZERO);

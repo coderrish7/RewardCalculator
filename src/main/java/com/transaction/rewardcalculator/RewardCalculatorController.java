@@ -1,40 +1,37 @@
 package com.transaction.rewardcalculator;
 
-
+import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
-import com.transaction.rewardcalculator.*;
-
 
 @RestController
 @RequestMapping("/reward-points")
 public class RewardCalculatorController {
 
-	private final List<Transaction> transactions = new ArrayList<>();
-
-	// @PostMapping
-	// public void addTransaction(@RequestBody Transaction transaction) {
-//		transactions.add(transaction);
-//	}
-
-	
-	public void RewardPointsController() throws IOException, CsvValidationException {
+	public List<CustomerTransaction> RewardPointsController() throws IOException, CsvValidationException {
+		List<CustomerTransaction> transactions = new ArrayList<>();
 		// read transaction data from CSV file
-		try (CSVReader csvReader = new CSVReader(new FileReader("C:/Users/Ayush/Downloads/f/rewardcalculator (1)/rewardcalculator/src/main/resources/transactions.csv"))) {
+
+		Resource resource = new ClassPathResource("transactions.csv");
+		File file = resource.getFile();
+
+		try (CSVReader csvReader = new CSVReader(new FileReader(file))) {
 			String[] header = csvReader.readNext();
 			if (!Arrays.equals(header, new String[] { "Customer", "Date", "Amount" })) {
 				throw new IOException("Invalid CSV file format");
@@ -46,36 +43,76 @@ public class RewardCalculatorController {
 				LocalDateTime transactionDate = LocalDateTime.parse(line[1], DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 				double transactionAmount = Double.parseDouble(line[2]);
 
-				transactions.add(new Transaction(customerName, transactionDate, transactionAmount));
+				transactions.add(new CustomerTransaction(customerName, transactionDate, transactionAmount));
 			}
 		}
+		return transactions;
 	}
 
-	@GetMapping("/ab")
-	public Map<String, Map<String, Integer>> getRewardPoints() throws CsvValidationException, IOException {
-	    Map<String, Map<String, Integer>> rewardPointsPerMonth = new HashMap<>();
+	@GetMapping("/monthly-reward")
+	public Map<String, Map<String, Integer>> getRewardPoints()
+			throws CsvValidationException, IOException, TransactionProcessingException {
+		Map<String, Map<String, Integer>> rewardPointsPerMonth = new HashMap<>();
+		List<CustomerTransaction> transactions = RewardPointsController();
+		// calculate reward points for all transactions
+		for (CustomerTransaction t : transactions) {
+			// extract customer name, transaction date, and transaction amount from
+			// transaction object
+			String customerName = t.getCustomerName();
+			LocalDateTime transactionDateTime = t.getTransactionDate();
 
-	    RewardPointsController();
-	    // calculate reward points for all transactions
-	    for (Transaction t : transactions) {
-	        // extract customer name, transaction date, and transaction amount from transaction object
-	        String customerName = t.getCustomerName();
-	        LocalDateTime transactionDateTime = t.getTransactionDate();
-	        double transactionAmount = t.getTransactionAmount();
+			int rewardPoints = 0;
+			// calculate reward points for this transaction
+			try {
+				rewardPoints = RewardPointsCalculator.calculateRewardPoints(t);
+			} catch (Exception e) {
+				throw new TransactionProcessingException("Error processing transaction: " + t.toString(), e);
+			}
 
-	        // calculate reward points for this transaction
-	        int rewardPoints = RewardPointsCalculator.calculateRewardPoints(t); 
+			// get month and year from transaction date
+			String monthYear = transactionDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM"));
 
-	        // get month and year from transaction date
-	        String monthYear = transactionDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM"));
+			// get inner map for this customer and month, creating it if necessary
+			Map<String, Integer> customerRewards = rewardPointsPerMonth.computeIfAbsent(customerName,
+					k -> new HashMap<>());
+			customerRewards.put(monthYear, customerRewards.getOrDefault(monthYear, 0) + rewardPoints);
+		}
 
-	        // get inner map for this customer and month, creating it if necessary
-	        Map<String, Integer> customerRewards = rewardPointsPerMonth.computeIfAbsent(customerName, k -> new HashMap<>());
-	        customerRewards.put(monthYear, customerRewards.getOrDefault(monthYear, 0) + rewardPoints);
-	    }
-
-	    return rewardPointsPerMonth;
+		return rewardPointsPerMonth;
 	}
-	
+
+	@GetMapping("/total")
+	public Map<String, Integer> getTotalRewardPointsPerCustomer()
+			throws CsvValidationException, IOException, TransactionProcessingException {
+		Map<String, Integer> totalRewardPointsPerCustomer = new HashMap<>();
+
+		List<CustomerTransaction> transactions = RewardPointsController();
+		// calculate reward points for all transactions and sum them up for each
+		// customer
+		for (CustomerTransaction t : transactions) {
+			// extract customer name from transaction object
+			String customerName = t.getCustomerName();
+
+			int rewardPoints = 0;
+			// calculate reward points for this transaction
+			try {
+				rewardPoints = RewardPointsCalculator.calculateRewardPoints(t);
+			} catch (Exception e) {
+				throw new TransactionProcessingException("Error processing transaction: " + t.toString(), e);
+			}
+
+			// add reward points for this transaction to total reward points for this
+			// customer
+			int totalRewardPoints = totalRewardPointsPerCustomer.getOrDefault(customerName, 0) + rewardPoints;
+			totalRewardPointsPerCustomer.put(customerName, totalRewardPoints);
+		}
+
+		return totalRewardPointsPerCustomer;
+	}
+
+	@GetMapping("/health")
+	public String healthCheck() {
+		return "Service is up and running";
+	}
+
 }
-
